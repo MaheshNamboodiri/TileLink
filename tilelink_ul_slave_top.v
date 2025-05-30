@@ -31,14 +31,14 @@ module tilelink_ul_slave_top #(
 
 	// Define opcodes for channels
 	// A Channel Opcodes
-	parameter PUT_FULL_DATA     = 3'd0,
-	parameter PUT_PARTIAL_DATA  = 3'd1,
-	parameter ARITHMETIC_DATA   = 3'd2,
-	parameter LOGICAL_DATA      = 3'd3,
-	parameter GET               = 3'd4,
-	parameter INTENT            = 3'd5,
-	parameter ACQUIRE_BLOCK     = 3'd6,
-	parameter ACQUIRE_PERM      = 3'd7,
+	parameter PUT_FULL_DATA_A     = 3'd0,
+	parameter PUT_PARTIAL_DATA_A  = 3'd1,
+	parameter ARITHMETIC_DATA_A   = 3'd2,
+	parameter LOGICAL_DATA_A      = 3'd3,
+	parameter GET_A               = 3'd4,
+	parameter INTENT_A            = 3'd5,
+	parameter ACQUIRE_BLOCK_A     = 3'd6,
+	parameter ACQUIRE_PERM_A      = 3'd7,
 
 	// D Channel Opcodes
 	parameter ACCESS_ACK_D      = 3'd0,
@@ -49,10 +49,10 @@ module tilelink_ul_slave_top #(
 	parameter RELEASE_ACK_D     = 3'd6,
 	
 	// Slave FSM States
-	parameter FETCH_INS 			 = 2'd0,
-	parameter EVALUATE_INS		 = 2'd1,
-	parameter CLEANUP 			 = 2'd2
-
+	parameter REQUEST 			 = 2'd0,
+	parameter RESPONSE   		 = 2'd1,
+	parameter CLEANUP 			 = 2'd2,
+	parameter RESET   			 = 2'd3	
 )(
 	input  wire                              clk,
 	input  wire                              reset,
@@ -69,7 +69,7 @@ module tilelink_ul_slave_top #(
 	input  wire [TL_SOURCE_WIDTH-1:0]        a_source,		// Transaction ID
 
 	// D Channel Sent to MASTER
-	output wire 									  d_valid,
+	output reg 									     d_valid,
 	input  wire                              d_ready, 		// Master ends d_ready to Slave to indicate that it is ready to accept data.
 	output wire [TL_OPCODE_WIDTH-1:0]        d_opcode,
 	output wire [TL_PARAM_WIDTH-1:0]         d_param,
@@ -80,10 +80,313 @@ module tilelink_ul_slave_top #(
 	output wire                              d_error,
 );
 
-	// FSM State Variables:
-	
+	// Registers for A Channel (Slave side input)
+	reg                             a_ready_reg;
+	reg [TL_OPCODE_WIDTH-1:0]       a_opcode_reg;
+	reg [TL_PARAM_WIDTH-1:0]        a_param_reg;
+	reg [TL_ADDR_WIDTH-1:0]         a_address_reg;
+	reg [TL_SIZE_WIDTH-1:0]         a_size_reg;
+	reg [TL_STRB_WIDTH-1:0]         a_mask_reg;
+	reg [TL_DATA_WIDTH-1:0]         a_data_reg;
+	reg [TL_SOURCE_WIDTH-1:0]       a_source_reg;
+
+	// Registers for D Channel (Slave side output)
+	reg                             d_valid_reg;
+	reg [TL_OPCODE_WIDTH-1:0]       d_opcode_reg;
+	reg [TL_PARAM_WIDTH-1:0]        d_param_reg;
+	reg [TL_SIZE_WIDTH-1:0]         d_size_reg;
+	reg [TL_SINK_WIDTH-1:0]         d_sink_reg;
+	reg [TL_SOURCE_WIDTH-1:0]       d_source_reg;
+	reg [TL_DATA_WIDTH-1:0]         d_data_reg;
+	reg                             d_error_reg;
+
+
 	// State variable for slave FSM
-	reg [:0] slave_state;
+	reg [1:0] slave_state;
+
+	// State flags
+	wire in_reset;
+	wire in_request;
+	wire in_response;
+	wire in_cleanup;
+	
+	// Memory Flags
+	
+	reg  [TL_ADDR_WIDTH-1:0] waddr;
+	reg              				wen;
+	reg  [TL_DATA_WIDTH-1:0] wdata;
+	reg  [TL_ADDR_WIDTH-1:0] raddr;
+	wire [TL_DATA_WIDTH-1:0] rdata;
+	
+	
+	/////////////////////////////////////////////////////////////
+	//////////// 				  FSM BLOCK    	 	 	 ////////////
+	/////////////////////////////////////////////////////////////	
+
+	// Assign flags based on state
+	assign in_reset    = (slave_state == RESET);
+	assign in_request  = (slave_state == REQUEST);
+	assign in_response = (slave_state == RESPONSE);
+	assign in_cleanup  = (slave_state == CLEANUP);	
+	
+	// State machine
+
+	always @(posedge clk or posedge rst) begin
+		if (rst) begin
+			slave_state <= REQUEST;
+		end
+		else begin
+			case (slave_state)
+
+				REQUEST: begin
+				if (a_valid)
+					slave_state <= RESPONSE;
+				else
+					slave_state <= REQUEST;
+				end
+
+				RESPONSE: begin
+					if (d_ready) begin
+						slave_state <= REQUEST;
+					end
+					else begin
+						slave_state <= RESPONSE;
+					end
+				end
+
+				CLEANUP: begin
+					slave_state <= REQUEST;
+				end
+
+				default: slave_state <= REQUEST;
+
+			endcase
+		end
+	end
+	
+	
+	/////////////////////////////////////////////////////////////
+	//////////// 				  DATAPATH     	 	 	 ////////////
+	/////////////////////////////////////////////////////////////		
+	
+	assign a_ready = in_request;
+	assign wen		= in_response;
+	
+	
+	
+	always @(posedge clk or posedge rst) begin
+		if (rst) begin
+		   // Reset logic for any control registers or outputs
+		   wen   <= 1'b0;
+		   waddr <= {TL_ADDR_WIDTH{1'b0}};
+		   wdata <= {TL_DATA_WIDTH{1'b0}};
+		   // Add others as needed
+		end else if (in_response) begin
+		   case (a_opcode_reg)
+		      PUT_FULL_DATA_A: begin
+		         // Full memory write
+		         waddr <= a_address_reg;
+		         wdata <= a_data_reg;
+		         wen   <= 1'b1;
+		         
+		         // Slave response
+					d_valid   <= 1'b1;
+					d_opcode  <= ACCESS_ACK_D;
+					d_param   <= {TL_PARAM_WIDTH{1'b0}}; 	// Reserved at 0
+					d_size    <= a_size_reg;					// Same as from MASTER
+					d_sink    <= {TL_SINK_WIDTH{1'b0}};		// Ignored
+					d_source  <= a_source_reg;					// Same as sent by MASTER
+					d_data    <= {TL_DATA_WIDTH{1'b0}};		// Ignored. Dataless response
+					d_error   <= 1'b0;							// No error. Change later! Add error logic from memory (failed mem access etc).
+					
+		      end
+
+		      PUT_PARTIAL_DATA_A: begin
+		         // Partial write example (you may use mask_reg to gate bytes)
+		         waddr <= a_address_reg;
+		         
+		         // Masked Data
+		         for (int i = 0; i < TL_STRB_WIDTH; i++)
+					   for (int j = 0; j < TL_STRB_WIDTH; j++) 
+					   	wdata[j + i*8] <= a_data_reg[j + i*8] & a_mask_reg[i];
+					
+		         wen   <= 1'b1;
+		         
+		         // Slave response
+					d_valid   <= 1'b1;
+					d_opcode  <= ACCESS_ACK_D;
+					d_param   <= {TL_PARAM_WIDTH{1'b0}}; 	// Reserved at 0
+					d_size    <= a_size_reg;					// Same as from MASTER
+					d_sink    <= {TL_SINK_WIDTH{1'b0}};		// Ignored
+					d_source  <= a_source_reg;					// Same as sent by MASTER
+					d_data    <= {TL_DATA_WIDTH{1'b0}};		// Ignored. Dataless response
+					d_error   <= 1'b0;							// No error. Change later! Add error logic from memory (failed mem access etc).		         
+		         
+		         
+		      end
+
+		      ARITHMETIC_DATA_A: begin
+		         // Placeholder for arithmetic
+		         wen <= 1'b0;
+		      end
+
+		      LOGICAL_DATA_A: begin
+		         // Placeholder for logic ops
+		         wen <= 1'b0;
+		      end
+
+		      GET_A: begin
+		         // Read only — no write enable
+		         wen <= 1'b0;
+		         raddr <= a_address_reg;
+
+		         // Slave response
+					d_valid   <= 1'b1;
+					d_opcode  <= ACCESS_ACK_DATA_D;
+					d_param   <= {TL_PARAM_WIDTH{1'b0}}; 	// Reserved at 0
+					d_size    <= a_size_reg;					// Same as from MASTER
+					d_sink    <= {TL_SINK_WIDTH{1'b0}};		// Ignored
+					d_source  <= a_source_reg;					// Same as sent by MASTER
+					d_data    <= rdata;							// Data requested. Single data, no burst.
+					d_error   <= 1'b0;							// No error. Change later! Add error logic from memory (failed mem access etc).				         
+		         
+		      end
+
+		      INTENT_A: begin
+		         // No effect
+		         wen <= 1'b0;
+		      end
+
+		      ACQUIRE_BLOCK_A: begin
+		         wen <= 1'b0;
+		      end
+
+		      ACQUIRE_PERM_A: begin
+		         wen <= 1'b0;
+		      end
+
+		      default: begin
+		         wen <= 1'b0;
+		      end
+		   endcase
+		end else begin
+		   wen <= 1'b0; // Deassert write when not responding
+		end
+	end
+
+
+
+
+
+
+	/////////////////////////////////////////////////////////////
+	//////////// 				CPU MEMORY     	 	 	 ////////////
+	/////////////////////////////////////////////////////////////	
+
+	// Dual Port RAM
+	/*
+	module memory_block # (
+		parameter DATAW = 8,
+		parameter DEPTH = 512,
+		parameter ADDRW = $clog2(DEPTH)
+	)(
+		input  clk,
+		input  rst,
+		input  [ADDRW-1:0] waddr,
+		input  wen,
+		input  [DATAW-1:0] wdata,
+		input  [ADDRW-1:0] raddr,
+		output [DATAW-1:0] rdata
+	);
+
+	reg [DATAW-1:0] mem [0:DEPTH-1];
+
+	reg [ADDRW-1:0] r_raddr, r_waddr;
+	reg [DATAW-1:0] r_rdata, r_wdata;
+	reg r_wen;
+
+	integer i;
+
+	initial begin
+		for (i = 0; i < DEPTH; i = i + 1) begin
+			mem[i] = 0;
+		end
+	end
+
+	always @ (posedge clk) begin
+		if (rst) begin
+			r_raddr <= 0;
+			r_waddr <= 0;
+			r_wdata <= 0;
+			r_rdata <= 0;
+		end else begin
+			r_raddr <= raddr;
+			r_wen <= wen;
+			r_waddr <= waddr;
+			r_wdata <= wdata;
+			r_rdata <= mem[r_raddr];
+			
+			if (r_wen) mem[r_waddr] <= r_wdata;
+		end
+	end
+
+	assign rdata = r_rdata;
+
+	endmodule	
+
+*/
+	
+
+	always @(posedge clk or posedge rst) begin
+		if (rst) begin
+			// A Channel Registers
+			a_ready_reg   <= 1'b0;
+			a_opcode_reg  <= {TL_OPCODE_WIDTH{1'b0}};
+			a_param_reg   <= {TL_PARAM_WIDTH{1'b0}};
+			a_address_reg <= {TL_ADDR_WIDTH{1'b0}};
+			a_size_reg    <= {TL_SIZE_WIDTH{1'b0}};
+			a_mask_reg    <= {TL_STRB_WIDTH{1'b0}};
+			a_data_reg    <= {TL_DATA_WIDTH{1'b0}};
+			a_source_reg  <= {TL_SOURCE_WIDTH{1'b0}};
+
+			// D Channel Registers
+			d_valid_reg   <= 1'b0;
+			d_opcode_reg  <= {TL_OPCODE_WIDTH{1'b0}};
+			d_param_reg   <= {TL_PARAM_WIDTH{1'b0}};
+			d_size_reg    <= {TL_SIZE_WIDTH{1'b0}};
+			d_sink_reg    <= {TL_SINK_WIDTH{1'b0}};
+			d_source_reg  <= {TL_SOURCE_WIDTH{1'b0}};
+			d_data_reg    <= {TL_DATA_WIDTH{1'b0}};
+			d_error_reg   <= 1'b0;
+		end
+		else begin
+			if (a_valid) begin
+				a_opcode_reg  <= a_opcode;
+				a_param_reg   <= a_param;
+				a_address_reg <= a_address;
+				a_size_reg    <= a_size;
+				a_mask_reg    <= a_mask;
+				a_data_reg    <= a_data;
+				a_source_reg  <= a_source;
+			end
+			else begin
+				a_opcode_reg  <= 0;
+				a_param_reg   <= 0;
+				a_address_reg <= 0;
+				a_size_reg    <= 0;
+				a_mask_reg    <= 0;
+				a_data_reg    <= 0;
+				a_source_reg  <= 0;			
+			end
+		end
+	end
+	
+
+
+	
+	
+	
+	
   
   
 	
