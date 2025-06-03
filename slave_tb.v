@@ -65,55 +65,6 @@ module tilelink_ul_slave_tb;
     // Clock generation
     always #5 clk = ~clk;
 
-    // Task: apply a PUT_FULL_DATA transaction
-    task put_full_data(input [63:0] addr, input [63:0] data);
-        begin
-            @(posedge clk);
-            a_valid   <= 1'b1;
-            a_opcode  <= 3'd0; // PUT_FULL_DATA
-            a_param   <= 3'd0;
-            a_address <= addr;
-            a_size    <= 8'd3; // 2^3 = 8 bytes (64-bit)
-            a_mask    <= 8'hFF;
-            a_data    <= data;
-            a_source  <= 3'd1;
-
-            wait (a_ready);
-            @(posedge clk);
-            a_valid <= 0;
-
-            wait (d_valid);
-            d_ready <= 1;
-            @(posedge clk);
-            d_ready <= 0;
-        end
-    endtask
-
-    // Task: apply a GET_A transaction
-    task get_data(input [63:0] addr);
-        begin
-            @(posedge clk);
-            a_valid   <= 1'b1;
-            a_opcode  <= 3'd4; // GET
-            a_param   <= 3'd0;
-            a_address <= addr;
-            a_size    <= 8'd3;
-            a_mask    <= 8'hFF;
-            a_data    <= 64'd0;
-            a_source  <= 3'd1;
-
-            wait (a_ready);
-            @(posedge clk);
-            a_valid <= 0;
-
-            wait (d_valid);
-            d_ready <= 1;
-            @(posedge clk);
-            $display("READ: Addr = 0x%h, Data = 0x%h", addr, d_data);
-            d_ready <= 0;
-        end
-    endtask
-
     initial begin
         $display("Starting TileLink UL Slave Testbench");
         clk = 0;
@@ -126,12 +77,69 @@ module tilelink_ul_slave_tb;
         rst = 0;
 
         // Test WRITE (PUT_FULL_DATA)
+        @(posedge clk);
         $display("Write to address 0x10 with data 0xDEADBEEFCAFEBABE");
-        put_full_data(64'h10, 64'hDEADBEEFCAFEBABE);
+        a_valid   <= 1'b1;
+        a_opcode  <= 3'd0; // PUT_FULL_DATA
+        a_param   <= 3'd0;
+        a_address <= 64'h10;
+        a_size    <= 8'd3;
+        a_mask    <= 8'hFF;
+        a_data    <= 64'hDEADBEEFCAFEBABE;
+        a_source  <= 3'd1;
 
-        // Test READ (GET)
+//        wait(a_ready);
+        @(negedge clk);
+        @(posedge clk);
+        
+        a_valid   <= 1'b0;
+        d_ready <= 0;
+        
+//        wait (clk == 0);
+//        wait (clk == 1);
+//        wait (clk == 0);
+//        #50
+        repeat(5) @(posedge clk); 
+                
+        d_ready <= 1;
+        
+        wait (clk == 1);
+        
+        @(negedge clk);
+        @(posedge clk);
         $display("Read from address 0x10");
-        get_data(64'h10);
+        a_valid   <= 1'b1;
+        a_opcode  <= 3'd4; // GET
+        a_param   <= 3'd0;
+        a_address <= 64'h10;
+        a_size    <= 8'd3;
+        a_mask    <= 8'hFF;
+        a_data    <= 64'd0;
+        a_source  <= 3'd1;
+        
+        @(negedge clk);
+        @(posedge clk);  
+        a_valid   <= 1'b0;      
+                
+//        a_valid <= 0;
+
+//        wait(d_valid);
+//        d_ready <= 1;
+//        @(posedge clk);
+//        d_ready <= 0;
+
+//        // Test READ (GET)
+
+
+//        wait(a_ready);
+//        @(posedge clk);
+//        a_valid <= 0;
+
+//        wait(d_valid);
+//        d_ready <= 1;
+//        @(posedge clk);
+//        $display("READ: Addr = 0x%h, Data = 0x%h", 64'h10, d_data);
+//        d_ready <= 0;
 
         #50;
         $display("Testbench completed.");

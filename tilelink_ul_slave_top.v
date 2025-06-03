@@ -80,6 +80,27 @@ module tilelink_ul_slave_top #(
 	output reg                              d_error
 );
 
+	// State variable for slave FSM
+	reg [1:0] slave_state;
+
+	// State flags
+	wire in_reset;
+	wire in_request;
+	wire in_response;
+	wire in_cleanup;
+	
+	// Memory Flags
+	
+	reg  [TL_ADDR_WIDTH-1:0] waddr;
+	reg              		   wen;
+	reg  [TL_DATA_WIDTH-1:0] wdata;
+	wire  [TL_ADDR_WIDTH-1:0] raddr;
+	wire [TL_DATA_WIDTH-1:0] rdata;
+	
+	
+	// For loop variables
+	integer i,j;
+	
 	// Registers for A Channel (Slave side input)
 	reg                             a_ready_reg;
 	reg [TL_OPCODE_WIDTH-1:0]       a_opcode_reg;
@@ -99,25 +120,9 @@ module tilelink_ul_slave_top #(
 	reg [TL_SOURCE_WIDTH-1:0]       d_source_reg;
 	reg [TL_DATA_WIDTH-1:0]         d_data_reg;
 	reg                             d_error_reg;
-
-
-	// State variable for slave FSM
-	reg [1:0] slave_state;
-
-	// State flags
-	wire in_reset;
-	wire in_request;
-	wire in_response;
-	wire in_cleanup;
+	// Wait signal
 	
-	// Memory Flags
-	
-	reg  [TL_ADDR_WIDTH-1:0] waddr;
-	reg              		   wen;
-	reg  [TL_DATA_WIDTH-1:0] wdata;
-	reg  [TL_ADDR_WIDTH-1:0] raddr;
-	wire [TL_DATA_WIDTH-1:0] rdata;
-	
+	reg wait_flag;
 	
 	/////////////////////////////////////////////////////////////
 	//////////// 				  FSM BLOCK    	 	 	 ////////////
@@ -128,6 +133,12 @@ module tilelink_ul_slave_top #(
 	assign in_request  = (slave_state == REQUEST);
 	assign in_response = (slave_state == RESPONSE);
 	assign in_cleanup  = (slave_state == CLEANUP);	
+	
+	
+    assign raddr = in_request      ? a_address :
+                   wait_flag   ? a_address_reg :
+                                64'd0;
+       
 	
 	// State machine
 
@@ -146,11 +157,13 @@ module tilelink_ul_slave_top #(
 				end
 
 				RESPONSE: begin
-					if (d_ready) begin
+					if (!d_ready) begin
 						slave_state <= REQUEST;
+						wait_flag <= 1;  
 					end
 					else begin
 						slave_state <= RESPONSE;
+						wait_flag <= 0;
 					end
 				end
 
@@ -170,10 +183,10 @@ module tilelink_ul_slave_top #(
 	/////////////////////////////////////////////////////////////		
 	
 	assign a_ready =  in_request;
-	//assign wen		= in_response;
+
 	
 	
-	
+	// Slave response
     always @(posedge clk or posedge rst) begin
         if (rst) begin
             // Reset logic for any control registers or outputs
@@ -181,105 +194,149 @@ module tilelink_ul_slave_top #(
             waddr <= {TL_ADDR_WIDTH{1'b0}};
             wdata <= {TL_DATA_WIDTH{1'b0}};
             // Add others as needed
-        end else if (in_response) begin
-            case (a_opcode_reg)
+        end else if (in_request | wait_flag) begin
+            case (a_opcode )
                 PUT_FULL_DATA_A: begin
                     // Full memory write
-                    waddr <= a_address_reg;
-                    wdata <= a_data_reg;
+                    waddr <= a_address ;
+                    wdata <= a_data ;
                     wen   <= 1'b1;
 
                     // Slave response
-                    d_valid   <= 1'b1;
-                    d_opcode  <= ACCESS_ACK_D;
-                    d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0
-                    d_size    <= a_size_reg;                 // Same as from MASTER
-                    d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored
-                    d_source  <= a_source_reg;               // Same as sent by MASTER
-                    d_data    <= {TL_DATA_WIDTH{1'b0}};      // Ignored. Dataless response
-                    d_error   <= 1'b0;                       // No error. Change later! Add error logic from memory (failed mem access etc).
+                    if (!wait_flag) begin
+                        d_valid   <= 1'b1;
+                        d_opcode  <= ACCESS_ACK_D;
+                        d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0
+                        d_size    <= a_size ;                 // Same as from MASTER
+                        d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored
+                        d_source  <= a_source ;               // Same as sent by MASTER
+                        d_data    <= {TL_DATA_WIDTH{1'b0}};      // Ignored. Dataless response
+                        d_error   <= 1'b0;                       // No error. Change later! Add error logic from memory (failed mem access etc).
+                    end
+                    else begin
+                        d_valid   <= 1'b1;
+                        d_opcode  <= ACCESS_ACK_D;
+                        d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0
+                        d_size    <= a_size_reg ;                 // Same as from MASTER
+                        d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored
+                        d_source  <= a_source_reg ;               // Same as sent by MASTER
+                        d_data    <= {TL_DATA_WIDTH{1'b0}};      // Ignored. Dataless response
+                        d_error   <= 1'b0;                       // No error. Change later! Add error logic from memory (failed mem access etc).                    
+                    
+                    end
                 end
 
                 PUT_PARTIAL_DATA_A: begin
-                    // Partial write example (you may use mask_reg to gate bytes)
-                    waddr <= a_address_reg;
+                    // Partial write example (you may use mask  to gate bytes)
+                    waddr <= a_address ;
 
                     // Masked Data
-                    for (int i = 0; i < TL_STRB_WIDTH; i++)
-                        for (int j = 0; j < TL_STRB_WIDTH; j++) 
-                            wdata[j + i*8] <= a_data_reg[j + i*8] & a_mask_reg[i];
+//                    for (i = 0; i < TL_STRB_WIDTH; i=i+1)
+//                        for (j = 0; j < TL_STRB_WIDTH; j=j+1) 
+//                            wdata[j + i*8] <= a_data [j + i*8] & a_mask [i];
 
-                    wen   <= 1'b1;
+//                    wen   <= 1'b1;
 
                     // Slave response
-                    d_valid   <= 1'b1;
-                    d_opcode  <= ACCESS_ACK_D;
-                    d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0
-                    d_size    <= a_size_reg;                 // Same as from MASTER
-                    d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored
-                    d_source  <= a_source_reg;               // Same as sent by MASTER
-                    d_data    <= {TL_DATA_WIDTH{1'b0}};      // Ignored. Dataless response
-                    d_error   <= 1'b0;                        // No error. Change later! Add error logic from memory (failed mem access etc).
+                    if(!wait_flag) begin
+                        d_valid   <= 1'b1;
+                        d_opcode  <= ACCESS_ACK_D;
+                        d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0
+                        d_size    <= a_size ;                 // Same as from MASTER
+                        d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored
+                        d_source  <= a_source ;               // Same as sent by MASTER
+                        d_data    <= {TL_DATA_WIDTH{1'b0}};      // Ignored. Dataless response
+                        d_error   <= 1'b0;                        // No error. Change later! Add error logic from memory (failed mem access etc).
+
+                        for (i = 0; i < TL_STRB_WIDTH; i=i+1)
+                            for (j = 0; j < TL_STRB_WIDTH; j=j+1) 
+                                wdata[j + i*8] <= a_data [j + i*8] & a_mask [i];
+    
+                        wen   <= 1'b1;                        
+                    end
+                    else begin
+                        d_valid   <= 1'b1;
+                        d_opcode  <= ACCESS_ACK_D;
+                        d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0
+                        d_size    <= a_size_reg ;                 // Same as from MASTER
+                        d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored
+                        d_source  <= a_source_reg ;               // Same as sent by MASTER
+                        d_data    <= {TL_DATA_WIDTH{1'b0}};      // Ignored. Dataless response
+                        d_error   <= 1'b0;                        // No error. Change later! Add error logic from memory (failed mem access etc).                    
+
+                        for (i = 0; i < TL_DATA_WIDTH; i=i+1) wdata[i] <= 0;
+//                            for (j = 0; j < TL_STRB_WIDTH; j=j+1) 
+//                                wdata[j + i*8] <= a_data [j + i*8] & a_mask [i];
+    
+                        wen   <= 1'b0;                      
+                    end
                 end
 
-                ARITHMETIC_DATA_A: begin
-                    // Placeholder for arithmetic
-                    wen <= 1'b0;
-                end
+//                ARITHMETIC_DATA_A: begin
+//                    // Placeholder for arithmetic
+//                    wen <= 1'b0;
+//                end
 
-                LOGICAL_DATA_A: begin
-                    // Placeholder for logic ops
-                    wen <= 1'b0;
-                end
+//                LOGICAL_DATA_A: begin
+//                    // Placeholder for logic ops
+//                    wen <= 1'b0;
+//                end
 
                 GET_A: begin
-                    // Read only — no write enable
+                    // Read only - no write enable
                     wen <= 1'b0;
-                    raddr <= a_address_reg;
+//                    raddr <= a_address ;
 
                     // Slave response
                     d_valid   <= 1'b1;
                     d_opcode  <= ACCESS_ACK_DATA_D;
                     d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0
-                    d_size    <= a_size_reg;                 // Same as from MASTER
+                    d_size    <= a_size ;                 // Same as from MASTER
                     d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored
-                    d_source  <= a_source_reg;               // Same as sent by MASTER
+                    d_source  <= a_source ;               // Same as sent by MASTER
                     d_data    <= rdata;                      // Data requested. Single data, no burst.
                     d_error   <= 1'b0;                        // No error. Change later! Add error logic from memory (failed mem access etc).
                 end
 
-                INTENT_A: begin
-                    // No effect
-                    wen <= 1'b0;
-                end
+//                INTENT_A: begin
+//                    // No effect
+//                    wen <= 1'b0;
+//                end
 
-                ACQUIRE_BLOCK_A: begin
-                    wen <= 1'b0;
-                end
+//                ACQUIRE_BLOCK_A: begin
+//                    wen <= 1'b0;
+//                end
 
-                ACQUIRE_PERM_A: begin
-                    wen <= 1'b0;
-                end
+//                ACQUIRE_PERM_A: begin
+//                    wen <= 1'b0;
+//                end
 
                 default: begin
                     wen <= 1'b0;
+                    d_valid   <= 1'b0;                                                                                                      
+                    d_opcode  <= 0;                                                                                              
+                    d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0                                                               
+                    d_size    <= 0 ;                 // Same as from MASTER                                                            
+                    d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored                                                                     
+                    d_source  <= 0 ;               // Same as sent by MASTER                                                         
+                    d_data    <= {TL_DATA_WIDTH{1'b0}};      // Ignored. Dataless response                                                  
+                    d_error   <= 1'b0;                       // No error. Change later! Add error logic from memory (failed mem access etc).                    
                 end
             endcase
         end else begin
             wen <= 1'b0; // Deassert write when not responding
+//            wen <= 1'b0;
+            d_valid   <= 1'b0;                                                                                                      
+            d_opcode  <= 0;                                                                                              
+            d_param   <= {TL_PARAM_WIDTH{1'b0}};     // Reserved at 0                                                               
+            d_size    <= 0 ;                 // Same as from MASTER                                                            
+            d_sink    <= {TL_SINK_WIDTH{1'b0}};      // Ignored                                                                     
+            d_source  <= 0 ;               // Same as sent by MASTER                                                         
+            d_data    <= {TL_DATA_WIDTH{1'b0}};      // Ignored. Dataless response                                                  
+            d_error   <= 1'b0;                       // No error. Change later! Add error logic from memory (failed mem access etc).             
         end
     end
 
-
-
-
-
-
-
-	
-
-
-	
 
 	always @(posedge clk or posedge rst) begin
 		if (rst) begin
@@ -324,6 +381,16 @@ module tilelink_ul_slave_top #(
 			// end
 		end
 	end
+
+
+
+
+	
+
+
+	
+
+
 	
 	
 memory_block #(
@@ -382,22 +449,34 @@ endmodule
 
 	always @ (posedge clk) begin
 		if (rst) begin
-			r_raddr <= 0;
+//			r_raddr <= 0;
 			r_waddr <= 0;
 			r_wdata <= 0;
 			r_rdata <= 0;
 		end else begin
-			r_raddr <= raddr;
+//			r_raddr <= raddr;
 			r_wen <= wen;
 			r_waddr <= waddr;
 			r_wdata <= wdata;
-			r_rdata <= mem[r_raddr];
+			r_rdata <= mem[raddr];
 			
-			if (r_wen) mem[r_waddr] <= r_wdata;
+			if (wen) mem[waddr] <= wdata;
 		end
 	end
 
-	assign rdata = r_rdata;
+	assign rdata = mem[raddr];
       
     endmodule      
 
+
+
+
+// Shift register for data masking
+
+always @(posedge clk) begin
+	data = {{1'b0}, a_data[TL_DATA_WIDTH-1:1]};
+
+	for (i = 0; i < 5; i = i + 1) begin
+		data[i] <= data[i-1];
+	end	
+end
