@@ -1,2 +1,2 @@
 # TileLink
-Summer Internship at Western Semiconductor
+Summer Bootcamp at Western Semiconductor
