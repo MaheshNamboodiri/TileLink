@@ -61,54 +61,52 @@ module tilelink_ul_slave_tb;
         .d_data(d_data),
         .d_error(d_error)
     );
-
+    reg [63:0] expected1;
+    reg [63:0] expected2;
+    reg [63:0] expected3;    
+    // Clock generation
     // Clock generation
     always #5 clk = ~clk;
 
     initial begin
+
+
         $display("Starting TileLink UL Slave Testbench");
         clk = 0;
         rst = 1;
         d_ready = 0;
         a_valid = 0;
 
-        // Wait and release reset
+        // Release reset
         #20;
         rst = 0;
 
-        // Test WRITE (PUT_FULL_DATA)
+        // =======================
+        // SET 1: PUT_FULL + GET
+        // =======================
+        expected1 = 64'hDEADBEEFCAFEBABE;
+
         @(posedge clk);
-        $display("Write to address 0x10 with data 0xDEADBEEFCAFEBABE");
-        a_valid   <= 1'b1;
+        $display("WRITE 1: PUT_FULL to 0x10 = 0x%h", expected1);
+        a_valid   <= 1;
         a_opcode  <= 3'd0; // PUT_FULL_DATA
         a_param   <= 3'd0;
         a_address <= 64'h10;
         a_size    <= 8'd3;
         a_mask    <= 8'hFF;
-        a_data    <= 64'hDEADBEEFCAFEBABE;
+        a_data    <= expected1;
         a_source  <= 3'd1;
 
-//        wait(a_ready);
-        @(negedge clk);
         @(posedge clk);
-        
-        a_valid   <= 1'b0;
-        d_ready <= 0;
-        
-//        wait (clk == 0);
-//        wait (clk == 1);
-//        wait (clk == 0);
-//        #50
-        repeat(5) @(posedge clk); 
-                
+        a_valid <= 0;
+
         d_ready <= 1;
-        
-        wait (clk == 1);
-        
-        @(negedge clk);
         @(posedge clk);
-        $display("Read from address 0x10");
-        a_valid   <= 1'b1;
+        d_ready <= 0;
+
+        @(posedge clk);
+        $display("READ 1: GET from 0x10");
+        a_valid   <= 1;
         a_opcode  <= 3'd4; // GET
         a_param   <= 3'd0;
         a_address <= 64'h10;
@@ -116,30 +114,118 @@ module tilelink_ul_slave_tb;
         a_mask    <= 8'hFF;
         a_data    <= 64'd0;
         a_source  <= 3'd1;
+
+        @(posedge clk);
+        a_valid <= 0;
+
+        d_ready <= 1;
+        @(posedge clk);
+        if (d_data === expected1) begin
+            $display("READ 1 CHECK PASSED: 0x%h", d_data);
+        end else begin
+            $display("READ 1 CHECK FAILED: Expected 0x%h, Got 0x%h", expected1, d_data);
+        end
+        d_ready <= 0;
+
+        repeat (5) @(posedge clk);
+
+        // =======================
+        // SET 2: PUT_PARTIAL + GET
+        // =======================
+        expected2 = 64'h123456789ABCDEF0;
+        @(posedge clk);
+        $display("WRITE 2: PUT_PARTIAL to 0x20 = 0x%h (mask=0x0F)", expected2);
+        a_valid   <= 1;
+        a_opcode  <= 3'd1; // PUT_PARTIAL_DATA
+        a_param   <= 3'd0;
+        a_address <= 64'h20;
+        a_size    <= 8'd3;
+        a_mask    <= 8'h0F;
+        a_data    <= expected2;
+        a_source  <= 3'd2;
+
+        @(posedge clk);
+        a_valid <= 0;
+
+        d_ready <= 1;
+        @(posedge clk);
+        d_ready <= 0;
+
+        @(posedge clk);
+        $display("READ 2: GET from 0x20");
+        a_valid   <= 1;
+        a_opcode  <= 3'd4; // GET
+        a_param   <= 3'd0;
+        a_address <= 64'h20;
+        a_size    <= 8'd3;
+        a_mask    <= 8'hFF;
+        a_data    <= 64'd0;
+        a_source  <= 3'd2;
+
+        @(posedge clk);
+        a_valid <= 0;
+
+        d_ready <= 1;
+        @(posedge clk);
+        // Only lower 4 bytes (mask = 0x0F) written, so upper 4 bytes may be 0 or unchanged
+        if (d_data[31:0] === expected2[31:0]) begin
+            $display("READ 2 CHECK PASSED: Lower 4B = 0x%h", d_data[31:0]);
+        end else begin
+            $display("READ 2 CHECK FAILED: Expected Lower 4B = 0x%h, Got = 0x%h", expected2[31:0], d_data[31:0]);
+        end
+        d_ready <= 0;
+
+        // =======================
+        // SET 3: PUT_FULL + GET with delayed d_ready
+        // =======================
+
+        expected3 = 64'hBADDCAFEBEEF1234;
+
+        @(posedge clk);
+        $display("WRITE 3: PUT_FULL to 0x30 = 0x%h", expected3);
+        a_valid   <= 1;
+        a_opcode  <= 3'd0; // PUT_FULL_DATA
+        a_param   <= 3'd0;
+        a_address <= 64'h30;
+        a_size    <= 8'd3;
+        a_mask    <= 8'hFF;
+        a_data    <= expected3;
+        a_source  <= 3'd3;
+
+        @(posedge clk);
+        a_valid <= 0;
+
+        // Delay d_ready for write response
+        repeat (2) @(posedge clk);
+        d_ready <= 1;
+        @(posedge clk);
+        d_ready <= 0;
+
+        @(posedge clk);
+        $display("READ 3: GET from 0x30");
+        a_valid   <= 1;
+        a_opcode  <= 3'd4; // GET
+        a_param   <= 3'd0;
+        a_address <= 64'h30;
+        a_size    <= 8'd3;
+        a_mask    <= 8'hFF;
+        a_data    <= 64'd0;
+        a_source  <= 3'd3;
+
+        @(posedge clk);
+        a_valid <= 0;
+
+        // Delay d_ready for read response
+        repeat (2) @(posedge clk);
+        d_ready <= 1;
+        @(posedge clk);
+        if (d_data === expected3) begin
+            $display("READ 3 CHECK PASSED: 0x%h", d_data);
+        end else begin
+            $display("READ 3 CHECK FAILED: Expected 0x%h, Got 0x%h", expected3, d_data);
+        end
+        d_ready <= 0;
         
-        @(negedge clk);
-        @(posedge clk);  
-        a_valid   <= 1'b0;      
-                
-//        a_valid <= 0;
-
-//        wait(d_valid);
-//        d_ready <= 1;
-//        @(posedge clk);
-//        d_ready <= 0;
-
-//        // Test READ (GET)
-
-
-//        wait(a_ready);
-//        @(posedge clk);
-//        a_valid <= 0;
-
-//        wait(d_valid);
-//        d_ready <= 1;
-//        @(posedge clk);
-//        $display("READ: Addr = 0x%h, Data = 0x%h", 64'h10, d_data);
-//        d_ready <= 0;
 
         #50;
         $display("Testbench completed.");

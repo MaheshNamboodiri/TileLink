@@ -5,8 +5,8 @@ peripherals like GPIO and Flash.
 
 *******************************************************************************************************************************************/
 
-
-module tilelink_ul_slave_top #(
+ 
+module tilelink_ul_slave_top #( 
 
 	//////////////////////////////////////////////////////////////////
 	////////////////////// Core interface widths /////////////////////
@@ -103,6 +103,7 @@ module tilelink_ul_slave_top #(
 	
 	// Registers for A Channel (Slave side input)
 	reg                             a_ready_reg;
+	reg                             a_valid_reg;
 	reg [TL_OPCODE_WIDTH-1:0]       a_opcode_reg;
 	reg [TL_PARAM_WIDTH-1:0]        a_param_reg;
 	reg [TL_ADDR_WIDTH-1:0]         a_address_reg;
@@ -110,9 +111,13 @@ module tilelink_ul_slave_top #(
 	reg [TL_STRB_WIDTH-1:0]         a_mask_reg;
 	reg [TL_DATA_WIDTH-1:0]         a_data_reg;
 	reg [TL_SOURCE_WIDTH-1:0]       a_source_reg;
+	
+	wire check;
+	
 
 	// Registers for D Channel (Slave side output)
 	reg                             d_valid_reg;
+	reg                             d_ready_reg;
 	reg [TL_OPCODE_WIDTH-1:0]       d_opcode_reg;
 	reg [TL_PARAM_WIDTH-1:0]        d_param_reg;
 	reg [TL_SIZE_WIDTH-1:0]         d_size_reg;
@@ -120,6 +125,8 @@ module tilelink_ul_slave_top #(
 	reg [TL_SOURCE_WIDTH-1:0]       d_source_reg;
 	reg [TL_DATA_WIDTH-1:0]         d_data_reg;
 	reg                             d_error_reg;
+	
+	assign check = a_valid | wait_flag;
 	// Wait signal
 	
 	reg wait_flag;
@@ -150,6 +157,7 @@ module tilelink_ul_slave_top #(
 			case (slave_state)
 
 				REQUEST: begin
+				wait_flag <= 0;
 				if (a_valid)
 					slave_state <= RESPONSE;
 				else
@@ -157,13 +165,16 @@ module tilelink_ul_slave_top #(
 				end
 
 				RESPONSE: begin
-					if (!d_ready) begin
+				    if (d_ready) begin
+				        slave_state <= REQUEST; wait_flag <= 0;
+				    end 
+					else if (!d_ready & d_ready_reg) begin // Means that response is done
 						slave_state <= REQUEST;
-						wait_flag <= 1;  
+						wait_flag <= 0;  
 					end
 					else begin
 						slave_state <= RESPONSE;
-						wait_flag <= 0;
+						wait_flag <= 1;
 					end
 				end
 
@@ -194,7 +205,7 @@ module tilelink_ul_slave_top #(
             waddr <= {TL_ADDR_WIDTH{1'b0}};
             wdata <= {TL_DATA_WIDTH{1'b0}};
             // Add others as needed
-        end else if (in_request | wait_flag) begin
+        end else if ((in_request & a_valid) | (in_response & !d_ready)) begin
             case (a_opcode )
                 PUT_FULL_DATA_A: begin
                     // Full memory write
@@ -349,6 +360,7 @@ module tilelink_ul_slave_top #(
 			a_mask_reg    <= {TL_STRB_WIDTH{1'b0}};
 			a_data_reg    <= {TL_DATA_WIDTH{1'b0}};
 			a_source_reg  <= {TL_SOURCE_WIDTH{1'b0}};
+			a_valid_reg <= 0;
 
 			// D Channel Registers
 			d_valid_reg   <= 1'b0;
@@ -359,8 +371,10 @@ module tilelink_ul_slave_top #(
 			d_source_reg  <= {TL_SOURCE_WIDTH{1'b0}};
 			d_data_reg    <= {TL_DATA_WIDTH{1'b0}};
 			d_error_reg   <= 1'b0;
+			d_ready_reg <= 0;
 		end
 		else begin
+		    d_ready_reg <= d_ready;
 			if (a_valid) begin
 				a_opcode_reg  <= a_opcode;
 				a_param_reg   <= a_param;
@@ -369,6 +383,7 @@ module tilelink_ul_slave_top #(
 				a_mask_reg    <= a_mask;
 				a_data_reg    <= a_data;
 				a_source_reg  <= a_source;
+				a_valid_reg <= a_valid;
 			end
 			// else begin
 			// 	a_opcode_reg  <= 0;
@@ -433,7 +448,7 @@ endmodule
 		output [TL_DATA_WIDTH-1:0] rdata
 	);
 
-	reg [TL_DATA_WIDTH-1:0] mem [0:500-1];
+	reg [TL_DATA_WIDTH-1:0] mem [0:DEPTH-1];
 
 	reg [TL_ADDR_WIDTH-1:0] r_raddr, r_waddr;
 	reg [TL_DATA_WIDTH-1:0] r_rdata, r_wdata;
@@ -453,6 +468,9 @@ endmodule
 			r_waddr <= 0;
 			r_wdata <= 0;
 			r_rdata <= 0;
+            for (i = 0; i < DEPTH; i = i + 1) begin
+                mem[i] <= 0;
+            end
 		end else begin
 //			r_raddr <= raddr;
 			r_wen <= wen;
@@ -471,12 +489,4 @@ endmodule
 
 
 
-// Shift register for data masking
 
-always @(posedge clk) begin
-	data = {{1'b0}, a_data[TL_DATA_WIDTH-1:1]};
-
-	for (i = 0; i < 5; i = i + 1) begin
-		data[i] <= data[i-1];
-	end	
-end
