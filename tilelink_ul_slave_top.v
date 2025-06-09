@@ -49,10 +49,10 @@ module tilelink_ul_slave_top #(
 	parameter RELEASE_ACK_D     = 3'd6,
 	
 	// Slave FSM States
-	parameter REQUEST 			 = 2'd0,
-	parameter RESPONSE   		 = 2'd1,
-	parameter CLEANUP 			 = 2'd2,
-	parameter RESET   			 = 2'd3	
+	parameter REQUEST 			 = 2'd1,
+	parameter RESPONSE   		 = 2'd2,
+	parameter CLEANUP 			 = 2'd3,
+	parameter IDLE   			 = 2'd0	
 )(
 	input  wire                              clk,
 	input  wire                              rst,
@@ -84,7 +84,7 @@ module tilelink_ul_slave_top #(
 	reg [1:0] slave_state;
 
 	// State flags
-	wire in_reset;
+	wire in_idle;
 	wire in_request;
 	wire in_response;
 	wire in_cleanup;
@@ -126,17 +126,17 @@ module tilelink_ul_slave_top #(
 	reg [TL_DATA_WIDTH-1:0]         d_data_reg;
 	reg                             d_error_reg;
 	
-	assign check = a_valid | wait_flag;
+	
 	// Wait signal
 	
 	reg wait_flag;
-	
+	assign check = a_valid | wait_flag;
 	/////////////////////////////////////////////////////////////
 	//////////// 				  FSM BLOCK    	 	 	 ////////////
 	/////////////////////////////////////////////////////////////	
 
 	// Assign flags based on state
-	assign in_reset    = (slave_state == RESET);
+	assign in_idle    = (slave_state == IDLE);
 	assign in_request  = (slave_state == REQUEST);
 	assign in_response = (slave_state == RESPONSE);
 	assign in_cleanup  = (slave_state == CLEANUP);	

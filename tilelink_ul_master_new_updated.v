@@ -6,7 +6,7 @@ peripherals like GPIO and Flash.
 *******************************************************************************************************************************************/
 
 
-module tilelink_master_top_new #( 
+module tilelink_master_top_new_updated #( 
 
 	//////////////////////////////////////////////////////////////////
 	////////////////////// Core interface widths /////////////////////
@@ -98,7 +98,26 @@ module tilelink_master_top_new #(
 	
 	reg d_ready_out;
 	reg r_d_valid;
+
+	// Registers for flopping A Channel signals
+	// These registers hold the values for the A Channel signals that are sent to the slave.
+	// They are useful in case the slave is not ready to accept the request in the current cycle.
+	// They will be used to send the request in the next cycle when the slave is ready.
+	reg                               r_a_valid; 			// Masterr_asserts to send valid request
+	reg   [TL_OPCODE_WIDTH-1:0]       r_a_opcode;
+	reg   [TL_PARAM_WIDTH-1:0]        r_a_param;			// Reserved; 0
+	reg   [TL_ADDR_WIDTH-1:0]         r_a_address;
+	reg   [TL_SIZE_WIDTH-1:0]         r_a_size;
+	reg   [TL_STRB_WIDTH-1:0]         r_a_mask;
+	reg   [TL_DATA_WIDTH-1:0]         r_a_data;
+	reg   [TL_SOURCE_WIDTH-1:0]       r_a_source;
+
+
+	// Defining a flag for distinguishing between immediate and delayed requests based on whether the slave is ready to accept the request.
+	reg flag_a_ready; // This flag indicates whether the slave is ready to accept the request in the current cycle.
 	
+
+
 	///////////////////////////////////////////////////////////////
 	//////////// 			 STATE MACHINE     	 	   ////////////
 	///////////////////////////////////////////////////////////////
@@ -112,7 +131,7 @@ module tilelink_master_top_new #(
 	// State machine for the master
 	always @(posedge clk or posedge rst) begin
 		if (rst) begin
-			master_state <= IDLE; // Reset to IDLE state
+			master_state <= REQUEST; // Reset to IDLE state
 		end else begin
 			master_state <= next_state; // Transition to the next state
 		end
@@ -122,16 +141,16 @@ module tilelink_master_top_new #(
 
 	always @(*) begin
 		case (master_state)
-			IDLE: begin
-				if (a_valid_in) begin
-					next_state = REQUEST; // Transition to REQUEST state if a_valid_in is asserted
-				end else begin
-					next_state = IDLE; // Stay in IDLE state otherwise
-				end
-			end
+//			IDLE: begin
+//				if (a_valid_in) begin
+//					next_state = REQUEST; // Transition to REQUEST state if a_valid_in is asserted
+//				end else begin
+//					next_state = IDLE; // Stay in IDLE state otherwise
+//				end
+//			end
 			
 			REQUEST: begin
-				if (d_valid) begin
+				if (a_valid_in & a_ready) begin
 					next_state = RESPONSE; // Transition to RESPONSE if slave response is valid
 				end else begin
 					next_state = REQUEST; // Stay in REQUEST state otherwise
@@ -139,8 +158,11 @@ module tilelink_master_top_new #(
 			end
 			
 			RESPONSE: begin
-				if (!d_valid & r_d_valid) begin
-					next_state = REQUEST; // Transition to CLEANUP state if d_valid is asserted
+			    if (d_valid) begin
+			         next_state = REQUEST;
+//			    end
+//				else if (!d_valid & r_d_valid) begin
+//					next_state = REQUEST; // Transition to CLEANUP state if d_valid is asserted
 				end else begin
 					next_state = RESPONSE; // Stay in RESPONSE state otherwise
 				end
@@ -166,51 +188,150 @@ module tilelink_master_top_new #(
     assign d_ready = is_response;
 	
 	// Request logic
+//	always @(posedge clk or posedge rst) begin
+//		if (rst) begin
+//			// Reset logic for A Channel registers
+//			a_valid <= 1'b0; // Master is not ready to send data
+//			a_opcode <= 0;
+//			a_param  <= 0; // Reserved, 0
+//			a_address <= 0;
+//			a_size   <= 0;
+//			a_mask   <= 0;
+//			a_data   <= 0;
+//			a_source <= 0;
+//		end else if (a_valid_in & !a_valid) begin // Incoming command is valid and master is not busy
+//			// Accept the incoming request from the testbench
+//			a_valid <= a_valid_in; // Master is ready to send data
+//			a_opcode <= a_opcode_in;
+//			a_param  <= a_param_in;
+//			a_address <= a_address_in;
+//			a_size   <= a_size_in;
+//			a_mask   <= a_mask_in;
+//			a_data   <= a_data_in;
+//			a_source <= a_source_in;
+//		end else if (a_ready) begin
+//			// This condition is when slave has accepted the request in the current cycle.
+//			// So, we can clear the valid signal and reset the values
+//			a_valid <= 1'b0; // Master is not ready to send data
+//			a_opcode <= 0;
+//			a_param  <= 0; // Reserved, 0
+//			a_address <= 0;
+//			a_size   <= 0;
+//			a_mask   <= 0;
+//			a_data   <= 0;
+//			a_source <= 0;			
+//		end
+//		else begin
+//			// This condition is when slave has not sent the response yet, so we keep the previous values
+//			a_valid <= a_valid; // Keep the previous value
+//			a_opcode <= a_opcode; // Keep the previous value
+//			a_param  <= a_param; // Keep the previous value
+//			a_address <= a_address; // Keep the previous value
+//			a_size   <= a_size; // Keep the previous value
+//			a_mask   <= a_mask; // Keep the previous value
+//			a_data   <= a_data; // Keep the previous value
+//			a_source <= a_source; // Keep the previous value
+//		end
+//	end
+
+
+	// Block for flopping A Channel signals
+	// This block is used to flop the A Channel signals that are sent to the slave.
+	
 	always @(posedge clk or posedge rst) begin
 		if (rst) begin
 			// Reset logic for A Channel registers
-			a_valid <= 1'b0; // Master is not ready to send data
-			a_opcode <= 0;
-			a_param  <= 0; // Reserved, 0
-			a_address <= 0;
-			a_size   <= 0;
-			a_mask   <= 0;
-			a_data   <= 0;
-			a_source <= 0;
-		end else if (a_valid_in & !a_valid) begin // Incoming command is valid and master is not busy
-			// Accept the incoming request from the testbench
-			a_valid <= a_valid_in; // Master is ready to send data
-			a_opcode <= a_opcode_in;
-			a_param  <= a_param_in;
-			a_address <= a_address_in;
-			a_size   <= a_size_in;
-			a_mask   <= a_mask_in;
-			a_data   <= a_data_in;
-			a_source <= a_source_in;
-		end else if (a_ready) begin
-			// This condition is when slave has accepted the request in the current cycle.
-			// So, we can clear the valid signal and reset the values
-			a_valid <= 1'b0; // Master is not ready to send data
-			a_opcode <= 0;
-			a_param  <= 0; // Reserved, 0
-			a_address <= 0;
-			a_size   <= 0;
-			a_mask   <= 0;
-			a_data   <= 0;
-			a_source <= 0;			
+			r_a_valid <= 1'b0; // Master is not ready to send data
+			r_a_opcode <= 0;
+			r_a_param  <= 0; // Reserved, 0
+			r_a_address <= 0;
+			r_a_size   <= 0;
+			r_a_mask   <= 0;
+			r_a_data   <= 0;
+			r_a_source <= 0; 
+		end 
+		else if (a_valid_in) begin
+			// Flop the A Channel signals
+			r_a_valid <= a_valid_in;
+			r_a_opcode <= a_opcode_in;
+			r_a_param  <= a_param_in;
+			r_a_address <= a_address_in;
+			r_a_size   <= a_size_in;
+			r_a_mask   <= a_mask_in;
+			r_a_data   <= a_data_in;
+			r_a_source <= a_source_in; 
 		end
+		else if (is_response) begin
+			// If in RESPONSE state, clear the valid signal and reset the values
+			r_a_valid <= 1'b0; // Master is not ready to send data
+			r_a_opcode <= 0;
+			r_a_param  <= 0; // Reserved, 0
+			r_a_address <= 0;
+			r_a_size   <= 0;
+			r_a_mask   <= 0;
+			r_a_data   <= 0;
+			r_a_source <= 0;			
+		end
+		// If not in RESPONSE state, keep the previous values
 		else begin
-			// This condition is when slave has not sent the response yet, so we keep the previous values
-			a_valid <= a_valid; // Keep the previous value
-			a_opcode <= a_opcode; // Keep the previous value
-			a_param  <= a_param; // Keep the previous value
-			a_address <= a_address; // Keep the previous value
-			a_size   <= a_size; // Keep the previous value
-			a_mask   <= a_mask; // Keep the previous value
-			a_data   <= a_data; // Keep the previous value
-			a_source <= a_source; // Keep the previous value
+			// Keep the previous values
+			r_a_valid <= r_a_valid;
+			r_a_opcode <= r_a_opcode;
+			r_a_param  <= r_a_param;
+			r_a_address <= r_a_address;
+			r_a_size   <= r_a_size;
+			r_a_mask   <= r_a_mask;
+			r_a_data   <= r_a_data;
+			r_a_source <= r_a_source;
 		end
 	end
+
+
+	always @(*) begin
+		if (rst) begin
+			// Reset logic for A Channel registers
+			a_valid   = 1'b0;
+			a_opcode  = 0;
+			a_param   = 0;
+			a_address = 0;
+			a_size    = 0;
+			a_mask    = 0;
+			a_data    = 0;
+			a_source  = 0;
+		end else if (a_valid_in) begin
+			// New transaction in same cycle
+			a_valid   = a_valid_in;
+			a_opcode  = a_opcode_in;
+			a_param   = a_param_in;
+			a_address = a_address_in;
+			a_size    = a_size_in;
+			a_mask    = a_mask_in;
+			a_data    = a_data_in;
+			a_source  = a_source_in;
+		end else if (is_request) begin
+			// Hold previous values (registered versions)
+			a_valid   = r_a_valid;
+			a_opcode  = r_a_opcode;
+			a_param   = r_a_param;
+			a_address = r_a_address;
+			a_size    = r_a_size;
+			a_mask    = r_a_mask;
+			a_data    = r_a_data;
+			a_source  = r_a_source;
+		end else begin
+			// Default case: no transaction
+			a_valid   = 1'b0;
+			a_opcode  = 0;
+			a_param   = 0;
+			a_address = 0;
+			a_size    = 0;
+			a_mask    = 0;
+			a_data    = 0;
+			a_source  = 0;
+		end
+	end
+
+
 
 	// Response logic
 	// This logic is for the D channel, which is the response from the slave to the master.

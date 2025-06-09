@@ -79,7 +79,7 @@ module tilelink_wrapper_top #(
 
 	// Instantiate the TileLink Uncached Lightweight master
 
-    tilelink_master_top_new #(
+    tilelink_master_top_new_updated #(
         .TL_ADDR_WIDTH     (TL_ADDR_WIDTH),
         .TL_DATA_WIDTH     (TL_DATA_WIDTH),
         .TL_STRB_WIDTH     (TL_STRB_WIDTH),
