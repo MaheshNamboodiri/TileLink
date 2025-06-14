@@ -14,7 +14,10 @@ module tilelink_wrapper_top #(
     parameter TL_SINK_WIDTH     = 3,
     parameter TL_OPCODE_WIDTH   = 3,
     parameter TL_PARAM_WIDTH    = 3,
-    parameter TL_SIZE_WIDTH     = 8
+    parameter TL_SIZE_WIDTH     = 8,
+
+	parameter MEM_BASE_ADDR 	  = 64'h0000_0000_0000_0000, // Base address for memory
+	parameter DEPTH           = 512                      // Memory depth (number of entries)    
 )(
     input  wire                              clk,
     input  wire                              rst,
@@ -79,7 +82,7 @@ module tilelink_wrapper_top #(
 
 	// Instantiate the TileLink Uncached Lightweight master
 
-    tilelink_master_top_new_updated #(
+    tilelink_ul_master_top #(
         .TL_ADDR_WIDTH     (TL_ADDR_WIDTH),
         .TL_DATA_WIDTH     (TL_DATA_WIDTH),
         .TL_STRB_WIDTH     (TL_STRB_WIDTH),
@@ -168,7 +171,10 @@ module tilelink_wrapper_top #(
         .REQUEST            (REQUEST),
         .RESPONSE           (RESPONSE),
         .CLEANUP            (CLEANUP),
-        .IDLE              (IDLE)
+        .IDLE              (IDLE),
+        
+        .MEM_BASE_ADDR(MEM_BASE_ADDR),
+        .DEPTH(DEPTH)
     ) slave_inst (
         .clk        (clk),
         .rst        (rst),

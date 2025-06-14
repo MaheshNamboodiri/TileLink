@@ -11,6 +11,9 @@ module tilelink_wrapper_top_tb;
     parameter TL_OPCODE_WIDTH = 3;
     parameter TL_PARAM_WIDTH  = 3;
     parameter TL_SIZE_WIDTH   = 8;
+    
+	parameter MEM_BASE_ADDR 	  = 64'd000; // Base address for memory
+	parameter DEPTH           = 512;                      // Memory depth (number of entries)      
 
     // Clock and reset
     reg clk;
@@ -59,7 +62,9 @@ module tilelink_wrapper_top_tb;
 //        .TL_SINK_WIDTH     (TL_SINK_WIDTH),
 //        .TL_OPCODE_WIDTH   (TL_OPCODE_WIDTH),
 //        .TL_PARAM_WIDTH    (TL_PARAM_WIDTH),
-//        .TL_SIZE_WIDTH     (TL_SIZE_WIDTH)
+//        .TL_SIZE_WIDTH     (TL_SIZE_WIDTH),
+//        .MEM_BASE_ADDR     (MEM_BASE_ADDR),
+//        .DEPTH(DEPTH)
 //    ) dut (
 //        .clk           (clk),
 //        .rst           (rst),
@@ -81,7 +86,9 @@ module tilelink_wrapper_top_tb;
         .TL_SINK_WIDTH     (TL_SINK_WIDTH),
         .TL_OPCODE_WIDTH   (TL_OPCODE_WIDTH),
         .TL_PARAM_WIDTH    (TL_PARAM_WIDTH),
-        .TL_SIZE_WIDTH     (TL_SIZE_WIDTH)
+        .TL_SIZE_WIDTH     (TL_SIZE_WIDTH),
+        .MEM_BASE_ADDR     (MEM_BASE_ADDR),
+        .DEPTH(DEPTH)        
     ) dut (
         .clk           (clk),
         .rst           (rst),
@@ -160,7 +167,7 @@ module tilelink_wrapper_top_tb;
         a_valid_in   <= 1;
         a_opcode_in  <= 3'd0; // PUT_FULL_DATA_A
         a_param_in   <= 3'd0;
-        a_address_in <= 64'h0;
+        a_address_in <= 64'd000;
         a_size_in    <= 3'd3; // 8 bytes
         a_mask_in    <= 8'hFF;
         a_data_in    <= 64'hDEADBEEF_CAFEBABE;
@@ -179,7 +186,7 @@ module tilelink_wrapper_top_tb;
         a_valid_in   <= 1;
         a_opcode_in  <= 3'd0; // PUT_FULL_DATA_A
         a_param_in   <= 3'd0;
-        a_address_in <= 64'h0;
+        a_address_in <= 64'd600;
         a_size_in    <= 3'd3; // 8 bytes
         a_mask_in    <= 8'hFF;
         a_data_in    <= 64'h12345678_9ABCDEF0;
@@ -198,7 +205,7 @@ module tilelink_wrapper_top_tb;
         a_valid_in   <= 1;
         a_opcode_in  <= 3'd0; // PUT_FULL_DATA_A
         a_param_in   <= 3'd0;
-        a_address_in <= 64'h0;
+        a_address_in <= 64'd1200;
         a_size_in    <= 3'd3; // 8 bytes
         a_mask_in    <= 8'hFF;
         a_data_in    <= 64'hFEEDFACE_BADC0FFE;
@@ -217,7 +224,7 @@ module tilelink_wrapper_top_tb;
         a_valid_in   <= 1;
         a_opcode_in  <= 3'd4; // GET_A
         a_param_in   <= 3'd0;
-        a_address_in <= 64'h0;
+        a_address_in <= 64'd0;
         a_size_in    <= 3'd3;
         a_mask_in    <= 8'hFF;
         a_data_in    <= 64'h0; // ignored
@@ -235,7 +242,7 @@ module tilelink_wrapper_top_tb;
         a_valid_in   <= 1;
         a_opcode_in  <= 3'd4; // GET_A
         a_param_in   <= 3'd0;
-        a_address_in <= 64'h0;
+        a_address_in <= 64'd600;
         a_size_in    <= 3'd3;
         a_mask_in    <= 8'hFF;
         a_data_in    <= 64'h0; // ignored
@@ -253,7 +260,7 @@ module tilelink_wrapper_top_tb;
         a_valid_in   <= 1;
         a_opcode_in  <= 3'd4; // GET_A
         a_param_in   <= 3'd0;
-        a_address_in <= 64'h0;
+        a_address_in <= 64'd1200;
         a_size_in    <= 3'd3;
         a_mask_in    <= 8'hFF;
         a_data_in    <= 64'h0; // ignored

@@ -6,7 +6,9 @@ module tilelink_ul_1M_3S #(
     parameter TL_SINK_WIDTH     = 3,
     parameter TL_OPCODE_WIDTH   = 3,
     parameter TL_PARAM_WIDTH    = 3,
-    parameter TL_SIZE_WIDTH     = 8
+    parameter TL_SIZE_WIDTH     = 8,
+	parameter MEM_BASE_ADDR 	  = 64'h0000_0000_0000_0000, // Base address for memory
+	parameter DEPTH           = 512                      // Memory depth (number of entries)        
 )(
     input  wire                              clk,
     input  wire                              rst,
@@ -80,6 +82,12 @@ module tilelink_ul_1M_3S #(
 	localparam CLEANUP 			 = 2'd2;
 	localparam IDLE   			 = 2'd3;
 
+    // Number of slaves
+    localparam NUM_SLAVES = 3;
+
+    // Address Ranges for slaves
+    localparam ADDR_RANGE = 500;
+
     // Create variables for A channel three slaves
     reg [TL_ADDR_WIDTH-1:0] slave_a_address[2:0];
     reg [TL_DATA_WIDTH-1:0] slave_a_data[2:0];
@@ -125,7 +133,7 @@ module tilelink_ul_1M_3S #(
     wire [TL_SOURCE_WIDTH-1:0] a_source;
 
     // Instantiate the tilelink master
-    tilelink_master_top_new_updated #(
+    tilelink_ul_master_top #(
         .TL_ADDR_WIDTH     (TL_ADDR_WIDTH),
         .TL_DATA_WIDTH     (TL_DATA_WIDTH),
         .TL_STRB_WIDTH     (TL_STRB_WIDTH),
@@ -189,7 +197,7 @@ module tilelink_ul_1M_3S #(
     // Instantiate the tilelink slave three times for three slaves using generate
     genvar i;
     generate
-    for (i = 0; i < 3; i = i + 1) begin : gen_peripheral_slaves
+    for (i = 0; i < NUM_SLAVES; i = i + 1) begin : gen_peripheral_slaves
         tilelink_ul_slave_top #(
             .TL_ADDR_WIDTH      (TL_ADDR_WIDTH),
             .TL_DATA_WIDTH      (TL_DATA_WIDTH),
@@ -216,7 +224,9 @@ module tilelink_ul_1M_3S #(
             .REQUEST            (REQUEST),
             .RESPONSE           (RESPONSE),
             .CLEANUP            (CLEANUP),
-            .IDLE               (IDLE)
+            .IDLE               (IDLE),
+            .MEM_BASE_ADDR     (i * DEPTH + MEM_BASE_ADDR),
+            .DEPTH(DEPTH)            
         ) slave_inst (
             .clk        (clk),
             .rst        (rst),
@@ -277,8 +287,8 @@ module tilelink_ul_1M_3S #(
         end
 
         if (!rst) begin
-            for (k = 0; k < 3; k=k+1) begin 
-                if (a_source_in == k) begin
+            for (k = 0; k < NUM_SLAVES; k=k+1) begin 
+                if ((a_address >= k*ADDR_RANGE) && (a_address < (k+1)*ADDR_RANGE)) begin
                     // Assigning slave
                     slave_a_address[k] = a_address;
                     slave_a_data[k] = a_data;
@@ -334,188 +344,3 @@ module tilelink_ul_1M_3S #(
 
 
 endmodule
-
-
-
-
-
-
-
-
-
-
-
-//    always @(*) begin
-//        if (rst) begin
-            
-//        end
-//        else begin
-//            for (k = 0; k < 3; k=k+1) begin 
-//                if (a_source_in == k) begin
-//                    // Assigning slave
-//                    slave_a_address[k] = a_address;
-//                    slave_a_data[k] = a_data;
-//                    slave_a_opcode[k] = a_opcode;
-//                    slave_a_param[k] = a_param;
-//                    slave_a_size[k] = a_size;
-//                    slave_a_mask[k] = a_mask;
-//                    slave_a_source[k] = a_source;
-//                    slave_a_valid[k] = a_valid;
-//                    a_ready = slave_a_ready[k];
-//                    a_ready_tb = slave_a_ready[k];
-
-//                    // D channnel back to master
-//                    d_opcode = slave_d_opcode[k];
-//                    d_param = slave_d_param[k];
-//                    d_size = slave_d_size[k];
-//                    d_sink = slave_d_sink[k];
-//                    d_source = slave_d_source[k];
-//                    d_data = slave_d_data[k];
-//                    d_error = slave_d_error[k];
-//                    d_valid = slave_d_valid[k];
-//                    slave_d_ready[k] = d_ready;
-
-                    
-//                    // Assigning outputs for testbench
-//                    a_address_tb = slave_a_address[k];
-//                    a_data_tb = slave_a_data[k];
-//                    a_opcode_tb = slave_a_opcode[k];
-//                    a_param_tb = slave_a_param[k];
-//                    a_size_tb = slave_a_size[k];
-//                    a_mask_tb = slave_a_mask[k];
-//                    a_source_tb = slave_a_source[k];
-//                    a_valid_tb = slave_a_valid[k];
-//                    a_ready_tb = slave_a_ready[k];
-
-//                    // Assigning D channel outputs for testbench
-//                    d_opcode_tb = slave_d_opcode[k];
-//                    d_param_tb = slave_d_param[k];
-//                    d_size_tb = slave_d_size[k];
-//                    d_sink_tb = slave_d_sink[k];
-//                    d_source_tb = slave_d_source[k];
-//                    d_data_tb = slave_d_data[k];
-//                    d_error_tb = slave_d_error[k];
-//                    d_valid_tb = slave_d_valid[k];
-//                    d_ready_tb = d_ready;
-
-
-
-
-//                end
-//                else begin
-//                    // Set other slaves to 0
-//                    for (j = 0; j < 3; j = j + 1) begin
-//                        if (j != a_source_in) begin
-//                            slave_a_address[j] = 0;
-//                            slave_a_data[j] = 0;
-//                            slave_a_opcode[j] = 0;
-//                            slave_a_param[j] = 0;
-//                            slave_a_size[j] = 0;
-//                            slave_a_mask[j] = 0;
-//                            slave_a_source[j] = 0;
-//                            slave_a_valid[j] = 0; 
-//                        end
-//                    end
-//                end               
-//            end
-//        end
- 
-
-//                    // // If not selected, set all to default values
-//                    //     slave_a_address[k] = 0;
-//                    //     slave_a_data[k] = 0;
-//                    //     slave_a_opcode[k] = 0;
-//                    //     slave_a_param[k] = 0;
-//                    //     slave_a_size[k] = 0;
-//                    //     slave_a_mask[k] = 0;
-//                    //     slave_a_source[k] = 0;
-//                    //     slave_a_valid[k] = 0;
-
-
-
-//                        // Testbench outputs
-//                        a_address_tb = 0;
-//                        a_data_tb = 0;
-//                        a_opcode_tb = 0;
-//                        a_param_tb = 0;
-//                        a_size_tb = 0;
-//                        a_mask_tb = 0;
-//                        a_source_tb = 0;
-//                        a_valid_tb = 0;
-//                        a_ready_tb = 0;
-
-//                        d_opcode_tb = 0;
-//                        d_param_tb = 0;
-//                        d_size_tb = 0;
-//                        d_sink_tb = 0;
-//                        d_source_tb = 0;
-//                        d_data_tb = 0;
-//                        d_error_tb = 0;
-//                        d_valid_tb = 0;
-//                        d_ready_tb = 0;
-//                end
-//            end
-//        end
-//    end
-
-//    // // This is a simple MUX based arbiter for the slaves
-//    // always @(*) begin
-//    //     if (rst) begin
-            
-//    //     end
-//    //     else begin
-//    //         case (a_source_in)
-//    //             3'b000: begin
-                    
-//    //                 // Assigning slave
-//    //                 slave_a_address[0] = a_address;
-//    //                 slave_a_data[0] = a_data;
-//    //                 slave_a_opcode[0] = a_opcode;
-//    //                 slave_a_param[0] = a_param;
-//    //                 slave_a_size[0] = a_size;
-//    //                 slave_a_mask[0] = a_mask;
-//    //                 slave_a_source[0] = a_source;
-//    //                 slave_a_valid[0] = a_valid;
-//    //                 a_ready = slave_a_ready[0];
-//    //                 a_ready_tb = slave_a_ready[0];
-
-//    //                 // D channnel back to master
-//    //                 d_opcode = slave_d_opcode[0];
-//    //                 d_param = slave_d_param[0];
-//    //                 d_size = slave_d_size[0];
-//    //                 d_sink = slave_d_sink[0];
-//    //                 d_source = slave_d_source[0];
-//    //                 d_data = slave_d_data[0];
-//    //                 d_error = slave_d_error[0];
-//    //                 d_valid = slave_d_valid[0];
-//    //                 d_ready = d_ready[0];
-
-                    
-//    //                 // Assigning outputs for testbench
-//    //                 a_address_tb = slave_a_address[0];
-//    //                 a_data_tb = slave_a_data[0];
-//    //                 a_opcode_tb = slave_a_opcode[0];
-//    //                 a_param_tb = slave_a_param[0];
-//    //                 a_size_tb = slave_a_size[0];
-//    //                 a_mask_tb = slave_a_mask[0];
-//    //                 a_source_tb = slave_a_source[0];
-//    //                 a_valid_tb = slave_a_valid[0];
-//    //                 a_ready_tb = slave_a_ready[0];
-
-//    //                 // Assigning D channel outputs for testbench
-//    //                 d_opcode_tb = slave_d_opcode[0];
-//    //                 d_param_tb = slave_d_param[0];
-//    //                 d_size_tb = slave_d_size[0];
-//    //                 d_sink_tb = slave_d_sink[0];
-//    //                 d_source_tb = slave_d_source[0];
-//    //                 d_data_tb = slave_d_data[0];
-//    //                 d_error_tb = slave_d_error[0];
-//    //                 d_valid_tb = slave_d_valid[0];
-//    //                 d_ready_tb = d_ready;
-//    //             end
-//    //             default: 
-//    //         endcase
-//    //     end
-//    // end
-
-//endmodule

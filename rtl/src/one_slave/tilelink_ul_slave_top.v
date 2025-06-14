@@ -52,7 +52,11 @@ module tilelink_ul_slave_top #(
 	parameter REQUEST 			 = 2'd1,
 	parameter RESPONSE   		 = 2'd2,
 	parameter CLEANUP 			 = 2'd3,
-	parameter IDLE   			 = 2'd0	
+	parameter IDLE   			 = 2'd0,
+
+	// Memory parameters
+	parameter MEM_BASE_ADDR 	  = 64'h0000_0000_0000_0000, // Base address for memory
+	parameter DEPTH           = 512                      // Memory depth (number of entries)
 )(
 	input  wire                              clk,
 	input  wire                              rst,
@@ -410,7 +414,8 @@ module tilelink_ul_slave_top #(
 	
 memory_block #(
     .TL_DATA_WIDTH(TL_DATA_WIDTH),      // Data width for memory
-    .DEPTH(512),                // Memory depth (number of entries)
+	.MEM_BASE_ADDR(MEM_BASE_ADDR),         // Base address for memory
+    .DEPTH(DEPTH),                		// Memory depth (number of entries)
     .TL_ADDR_WIDTH(TL_ADDR_WIDTH)       // Address width
 ) memory_inst (
     .clk(clk),                  // Clock input
@@ -436,6 +441,7 @@ endmodule
 	
 	module memory_block # (
 		parameter TL_DATA_WIDTH = 8,
+		parameter MEM_BASE_ADDR = 64'h0000_0000_0000_0000, // Base address for memory
 		parameter DEPTH = 512,
 		parameter TL_ADDR_WIDTH = $clog2(DEPTH)
 	)(
@@ -448,7 +454,7 @@ endmodule
 		output [TL_DATA_WIDTH-1:0] rdata
 	);
 
-	reg [TL_DATA_WIDTH-1:0] mem [0:DEPTH-1];
+	reg [TL_DATA_WIDTH-1:0] mem [MEM_BASE_ADDR:MEM_BASE_ADDR+DEPTH-1];
 
 	reg [TL_ADDR_WIDTH-1:0] r_raddr, r_waddr;
 	reg [TL_DATA_WIDTH-1:0] r_rdata, r_wdata;
@@ -468,7 +474,7 @@ endmodule
 			r_waddr <= 0;
 			r_wdata <= 0;
 			r_rdata <= 0;
-            for (i = 0; i < DEPTH; i = i + 1) begin
+            for (i = MEM_BASE_ADDR; i < MEM_BASE_ADDR+DEPTH-1; i = i + 1) begin
                 mem[i] <= 0;
             end
 		end else begin
